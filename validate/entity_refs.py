@@ -10,14 +10,24 @@ pass it happily; the automation then deploys, reloads, and silently never fires.
 That is the failure mode this repo calls out as the common one, and this script
 is the only thing that catches it.
 
-Two tiers of finding:
+Three tiers of finding:
 
+  PARSE     the file is not valid YAML             -> exit 1
   MISSING   referenced but no such entity exists   -> exit 1
   DEAD      exists but is unavailable/unknown      -> exit 0, or 1 with --strict
 
 DEAD matters as much as MISSING in practice. The upstairs hallway ran for three
 months against an IKEA sensor that had dropped off the mesh: the entity_id still
 resolved, so nothing anywhere complained.
+
+PARSE covers *every* YAML under ha-config/, including the ones this script does
+not scan for entity references. That split is deliberate. Nothing else in the
+pipeline reads esphome/ — `ha core check` validates what HA loads, and HA does
+not load device firmware definitions — so a syntax error there reaches the
+instance unremarked. It has happened: an editor stole keyboard focus and typed a
+bare word into the middle of a wifi: block, and the broken file deployed
+cleanly. Parsing is nearly free and needs no schema knowledge, so it is
+unconditional; only the noisier entity-reference scan is opt-in.
 
 Comments are not scanned — the files are parsed as YAML, so commented-out config
 does not produce findings.
@@ -46,8 +56,9 @@ SKIP_DIRS = {"www", "zha_quirks"}
 
 # ESPHome yamls are device firmware definitions compiled by the add-on, not
 # config HA reads. They use a different schema and mention HA entities only
-# occasionally, so they are opt-in via --esphome rather than a default source of
-# noise.
+# occasionally, so *entity-reference scanning* over them is opt-in via --esphome
+# rather than a default source of noise. They are still always parsed — see the
+# module docstring on why the syntax check is unconditional.
 ESPHOME_DIR = "esphome"
 
 # A candidate is only treated as an entity reference if its domain is plausible.
@@ -98,7 +109,8 @@ def _placeholder(loader: yaml.Loader, tag_suffix: str, node: yaml.Node) -> str:
 HaTagLoader.add_multi_constructor("!", _placeholder)
 
 
-def iter_config_files(include_esphome: bool) -> list[Path]:
+def iter_config_files() -> list[Path]:
+    """Every YAML under ha-config/ worth parsing, esphome/ included."""
     files = []
     for path in sorted(CONFIG_DIR.rglob("*")):
         if path.suffix not in {".yaml", ".yml"} or not path.is_file():
@@ -108,10 +120,13 @@ def iter_config_files(include_esphome: bool) -> list[Path]:
             continue
         if set(relative.parts[:-1]) & SKIP_DIRS:
             continue
-        if relative.parts and relative.parts[0] == ESPHOME_DIR and not include_esphome:
-            continue
         files.append(path)
     return files
+
+
+def is_esphome(path: Path) -> bool:
+    relative = path.relative_to(CONFIG_DIR)
+    return bool(relative.parts) and relative.parts[0] == ESPHOME_DIR
 
 
 def walk_strings(node: object):
@@ -150,10 +165,16 @@ def line_of(path: Path, entity_id: str) -> int:
 
 def collect_references(
     files: list[Path],
+    reference_files: set[Path],
     domains: frozenset[str],
     services: set[str],
     live: dict[str, str],
 ) -> tuple[dict[str, list[tuple[Path, int]]], list[tuple[Path, str]]]:
+    """Parse every file; collect entity references only from reference_files.
+
+    Every file is parsed because that is the syntax check, and it is worth
+    running over config this script otherwise has no opinion about.
+    """
     references: dict[str, list[tuple[Path, int]]] = defaultdict(list)
     parse_errors: list[tuple[Path, str]] = []
 
@@ -163,6 +184,9 @@ def collect_references(
         except yaml.YAMLError as exc:
             parse_errors.append((path, str(exc).splitlines()[0]))
             continue
+
+        if path not in reference_files:
+            continue  # parsed for syntax only
 
         seen: set[str] = set()
         for document in documents:
@@ -194,7 +218,10 @@ def main() -> int:
     parser.add_argument(
         "--esphome",
         action="store_true",
-        help="also scan esphome/ device configs (noisy; different schema)",
+        help=(
+            "also scan esphome/ for entity references (noisy; different schema). "
+            "esphome/ is always parsed for syntax regardless of this flag"
+        ),
     )
     args = parser.parse_args()
 
@@ -212,12 +239,16 @@ def main() -> int:
 
     domains = KNOWN_DOMAINS | {eid.split(".", 1)[0] for eid in live}
 
-    files = iter_config_files(include_esphome=args.esphome)
-    references, parse_errors = collect_references(files, domains, services, live)
+    files = iter_config_files()
+    reference_files = {p for p in files if args.esphome or not is_esphome(p)}
+    references, parse_errors = collect_references(
+        files, reference_files, domains, services, live
+    )
 
     print(
-        f"instance={api.instance}  files={len(files)}  "
-        f"references={len(references)}  live_entities={len(live)}"
+        f"instance={api.instance}  parsed={len(files)}  "
+        f"scanned={len(reference_files)}  references={len(references)}  "
+        f"live_entities={len(live)}"
     )
 
     for path, message in parse_errors:

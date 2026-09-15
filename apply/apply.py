@@ -96,20 +96,21 @@ def describe(before: Any, after: Any) -> str:
 # --- registry --------------------------------------------------------------
 
 
-def plan_registry(ws: HaWs, errors: list[str]) -> list[Change]:
-    if not ENTITY_MAP.exists():
-        print(f"  registry: no {ENTITY_MAP.relative_to(CONFIG_ROOT)}, nothing declared")
+def plan_registry(ws: HaWs, errors: list[str], entity_map: Path = ENTITY_MAP) -> list[Change]:
+    if not entity_map.exists():
+        print(f"  registry: no {entity_map}, nothing declared")
         return []
 
-    desired = load_yaml(ENTITY_MAP) or {}
+    desired = load_yaml(entity_map) or {}
     if not isinstance(desired, dict):
-        errors.append(f"{ENTITY_MAP.name}: expected a mapping at the top level")
+        errors.append(f"{entity_map.name}: expected a mapping at the top level")
         return []
 
     live_floors = {f["floor_id"]: f for f in ws.command("config/floor_registry/list")}
     live_areas = {a["area_id"]: a for a in ws.command("config/area_registry/list")}
     live_labels = {lbl["label_id"]: lbl for lbl in ws.command("config/label_registry/list")}
     live_entities = ws.command("config/entity_registry/list")
+    live_devices = ws.command("config/device_registry/list")
 
     changes: list[Change] = []
 
@@ -150,6 +151,13 @@ def plan_registry(ws: HaWs, errors: list[str]) -> list[Change]:
     declared_areas = {a["area_id"] for a in desired.get("areas") or [] if a.get("area_id")}
     declared_labels = {l["label_id"] for l in desired.get("labels") or [] if l.get("label_id")}
 
+    changes += plan_devices(
+        desired.get("devices") or [],
+        live_devices,
+        known_areas=set(live_areas) | declared_areas,
+        known_labels=set(live_labels) | declared_labels,
+        errors=errors,
+    )
     changes += plan_entities(
         desired.get("entities") or [],
         live_entities,
@@ -157,6 +165,66 @@ def plan_registry(ws: HaWs, errors: list[str]) -> list[Change]:
         known_labels=set(live_labels) | declared_labels,
         errors=errors,
     )
+    return changes
+
+
+def plan_devices(
+    entries: list,
+    live_devices: list[dict],
+    *,
+    known_areas: set[str],
+    known_labels: set[str],
+    errors: list[str],
+) -> list[Change]:
+    """Devices are keyed on one of their integration identifiers, e.g. `mqtt_boiler`.
+
+    Like unique_id for entities, an identifier is the integration's own name for the
+    device and is the same on every instance; the device_id is not. `name` sets the
+    user's name (name_by_user), leaving the integration's own name alone.
+    """
+    changes: list[Change] = []
+    for entry in entries:
+        if not isinstance(entry, dict) or not entry.get("identifier"):
+            errors.append("devices: every entry needs an identifier")
+            continue
+        identifier = str(entry["identifier"])
+        matches = [d for d in live_devices if any(i[1] == identifier for i in d.get("identifiers") or [])]
+        if len(matches) != 1:
+            errors.append(f"device identifier {identifier!r} matches {len(matches)} devices, expected one")
+            continue
+        current = matches[0]
+        label = current.get("name_by_user") or current.get("name")
+        payload: dict[str, Any] = {"device_id": current["id"]}
+        details: list[str] = []
+
+        if "name" in entry and entry["name"] != current.get("name_by_user"):
+            payload["name_by_user"] = entry["name"]
+            details.append(f"name_by_user: {describe(current.get('name_by_user'), entry['name'])}")
+        if "area" in entry:
+            area = entry["area"]
+            if area is not None and area not in known_areas:
+                errors.append(f"device {label}: area {area!r} does not exist and is not declared under `areas:`.")
+            elif area != current.get("area_id"):
+                payload["area_id"] = area
+                details.append(f"area_id: {describe(current.get('area_id'), area)}")
+        if "labels" in entry:
+            desired_labels = sorted(entry["labels"] or [])
+            unknown = [l for l in desired_labels if l not in known_labels]
+            if unknown:
+                errors.append(f"device {label}: labels {unknown} do not exist and are not declared under `labels:`.")
+            elif desired_labels != sorted(current.get("labels") or []):
+                payload["labels"] = desired_labels
+                details.append(f"labels: {describe(sorted(current.get('labels') or []), desired_labels)}")
+
+        if len(payload) > 1:
+            changes.append(
+                Change(
+                    summary=f"UPDATE device {label}  (identifier {identifier})",
+                    command="config/device_registry/update",
+                    payload=payload,
+                    details=tuple(details),
+                )
+            )
     return changes
 
 
@@ -422,6 +490,12 @@ def main() -> int:
         help="limit to registry or dashboards; default is both",
     )
     parser.add_argument(
+        "--entity-map",
+        type=Path,
+        default=ENTITY_MAP,
+        help="registry file to apply instead of desired/entity-map.yaml, for a one-off set of changes",
+    )
+    parser.add_argument(
         "--write",
         action="store_true",
         help="actually apply. Without this nothing is sent to the instance",
@@ -443,7 +517,7 @@ def main() -> int:
             errors: list[str] = []
             changes: list[Change] = []
             if "registry" in targets:
-                changes += plan_registry(ws, errors)
+                changes += plan_registry(ws, errors, args.entity_map)
             if "dashboards" in targets:
                 changes += plan_dashboards(ws, errors)
 

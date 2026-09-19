@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.13"
-# dependencies = ["ruamel.yaml>=0.18"]
-# ///
 """Adopt what the instance has as what we intended: exports/ -> desired/.
 
 The missing step between [pull] and [apply]. You change something in the UI,
@@ -14,7 +9,7 @@ Promote is the reviewed version of that copy. It prints the diff it would make
 to `desired/` and writes nothing without `--write`.
 
 It reads `exports/`, so it adopts **what the last pull recorded**, not what the
-instance has this second. Run `mise run pull` first if the UI has changed since.
+instance has this second. Run `hass-ops pull` first if the UI has changed since.
 
 This is the only tool here that never connects to Home Assistant. It is a local
 file operation on two directories, both in git, and that is the whole of it.
@@ -36,9 +31,11 @@ from typing import Any
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
-CONFIG_ROOT = Path(__file__).resolve().parent.parent
-EXPORTS_ROOT = CONFIG_ROOT / "exports"
-DESIRED_ROOT = CONFIG_ROOT / "desired"
+from hass_ops.project import current
+
+CONFIG_ROOT = current().root
+EXPORTS_ROOT = current().exports
+DESIRED_ROOT = current().desired
 ENTITY_MAP = DESIRED_ROOT / "entity-map.yaml"
 
 DESIRED_HEADER = (
@@ -71,7 +68,7 @@ def instance_name() -> str:
     """Resolve the instance without needing a token — promote never connects."""
     instance = os.environ.get("HA_INSTANCE")
     if not instance:
-        raise SystemExit("error: HA_INSTANCE is not set. Run through `mise run`.")
+        raise SystemExit("error: HA_INSTANCE is not set. Run through the `hass-ops` command.")
     return instance
 
 
@@ -114,7 +111,7 @@ def show_diff(path: Path, new_text: str) -> bool:
 def promote_dashboards(names: list[str], instance: str, write: bool) -> int:
     source_dir = EXPORTS_ROOT / instance / "dashboards"
     if not source_dir.is_dir():
-        raise SystemExit(f"error: {source_dir.relative_to(CONFIG_ROOT)} does not exist. Run `mise run pull`.")
+        raise SystemExit(f"error: {source_dir.relative_to(CONFIG_ROOT)} does not exist. Run `hass-ops pull`.")
 
     available = sorted(p.stem for p in source_dir.glob("*.yaml"))
     if names == ["all"]:
@@ -155,7 +152,7 @@ def promote_dashboards(names: list[str], instance: str, write: bool) -> int:
 def load_registry_entities(instance: str) -> list[dict]:
     path = EXPORTS_ROOT / instance / "registry.yaml"
     if not path.exists():
-        raise SystemExit(f"error: {path.relative_to(CONFIG_ROOT)} does not exist. Run `mise run pull`.")
+        raise SystemExit(f"error: {path.relative_to(CONFIG_ROOT)} does not exist. Run `hass-ops pull`.")
     data = round_trip_yaml().load(path.read_text()) or {}
     return list(data.get("entities") or [])
 
@@ -188,7 +185,7 @@ def promote_entities(entity_ids: list[str], instance: str, write: bool) -> int:
     if missing:
         raise SystemExit(
             f"error: not in {instance} registry export: {', '.join(missing)}. "
-            "Check the entity_id, or run `mise run pull` if it is new."
+            "Check the entity_id, or run `hass-ops pull` if it is new."
         )
 
     yaml = round_trip_yaml()
@@ -277,7 +274,7 @@ def main() -> int:
         return 0
 
     print(f"promoted into desired/ ({changed} file(s) changed).")
-    print("Review with `git diff desired/`, then `mise run apply` should plan nothing.")
+    print("Review with `git diff desired/`, then `hass-ops apply` should plan nothing.")
     return 0
 
 

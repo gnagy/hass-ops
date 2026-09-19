@@ -19,12 +19,9 @@ import logging
 from pathlib import Path
 from typing import Any
 
-import sys
+from hass_ops.ha_api import HaApiError, resolve_instance
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from ha_api import HaApiError, resolve_instance  # noqa: E402
-
-from websockets.sync.client import connect  # noqa: E402
+from websockets.sync.client import connect
 
 log = logging.getLogger(__name__)
 
@@ -95,7 +92,7 @@ class HaWs:
         if result.get("type") == "auth_invalid":
             raise HaWsError(
                 f"authentication rejected by {self.instance}: {result.get('message')}. "
-                "The token in mise.local.toml may have been revoked."
+                "The token (HA_<INSTANCE>_TOKEN) may have been revoked."
             )
         if result.get("type") != "auth_ok":
             raise HaWsError(f"expected auth_ok, got {result.get('type')!r}")

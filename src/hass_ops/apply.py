@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.13"
-# dependencies = ["pyyaml>=6", "websockets>=13"]
-# ///
 """Reconcile the instance toward `desired/`. The only tool here that writes.
 
 Reads `desired/`, never `exports/`. `exports/` is what the instance has;
@@ -43,14 +38,14 @@ from typing import Any
 
 import yaml
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from ha_api import HaApiError  # noqa: E402
-from ha_ws import HaWs  # noqa: E402
+from hass_ops.ha_api import HaApiError
+from hass_ops.project import current
+from hass_ops.ha_ws import HaWs
 
 log = logging.getLogger("apply")
 
-CONFIG_ROOT = Path(__file__).resolve().parent.parent.parent
-DESIRED_ROOT = CONFIG_ROOT / "desired"
+CONFIG_ROOT = current().root
+DESIRED_ROOT = current().desired
 ENTITY_MAP = DESIRED_ROOT / "entity-map.yaml"
 DESIRED_DASHBOARDS = DESIRED_ROOT / "dashboards"
 
@@ -545,7 +540,7 @@ def main() -> int:
             sys.stdout.flush()
             execute(ws, changes)
             print(f"\napplied {len(changes)} change(s) to {ws.instance}")
-            print("Run `mise run pull` to refresh exports/ so drift stays clean.")
+            print("Run `hass-ops pull` to refresh exports/ so drift stays clean.")
 
     except HaApiError as exc:
         print(f"error: {exc}", file=sys.stderr)

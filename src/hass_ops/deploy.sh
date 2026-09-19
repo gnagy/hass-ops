@@ -24,25 +24,28 @@ case "$mode" in
     ;;
 esac
 
-# Resolve the target the same way tools/ha_api.py does. Never hardcode a host.
+# hass-ops deploy publishes the instance and its ssh host (from hass-ops.toml). Never hardcode a host.
 instance="${HA_INSTANCE:-}"
 if [ -z "$instance" ]; then
-  echo "error: HA_INSTANCE is not set. Run through \`mise run\`." >&2
+  echo "error: HA_INSTANCE is not set. Run through \`hass-ops deploy\`." >&2
   exit 2
 fi
 ssh_var="HA_$(printf '%s' "$instance" | tr '[:lower:]' '[:upper:]')_SSH"
 ssh_target="${!ssh_var:-}"
 if [ -z "$ssh_target" ]; then
-  echo "error: HA_INSTANCE=$instance but $ssh_var is unset (see mise.toml)." >&2
+  echo "error: HA_INSTANCE=$instance but $ssh_var is unset: give the instance an ssh host in hass-ops.toml." >&2
   exit 2
 fi
 
-cd "$(dirname "$0")/.."
+: "${HASS_OPS_ROOT:?run through hass-ops deploy}"
+config_dir="${HASS_OPS_CONFIG_DIR:-$HASS_OPS_ROOT/ha-config}"
+rsyncignore="${HASS_OPS_RSYNCIGNORE:-$HASS_OPS_ROOT/.rsyncignore}"
+cd "$HASS_OPS_ROOT"
 
 echo "instance=$instance  target=$ssh_target:/config/  mode=$mode"
 echo
 echo "--- dry run ---"
-dry_run="$(rsync -avn --delete-after --exclude-from=.rsyncignore ha-config/ "$ssh_target:/config/")"
+dry_run="$(rsync -avn --delete-after --exclude-from="$rsyncignore" "$config_dir/" "$ssh_target:/config/")"
 printf '%s\n' "$dry_run"
 
 deletions="$(printf '%s\n' "$dry_run" | grep '^deleting' || true)"
@@ -53,7 +56,7 @@ if [ -n "$deletions" ]; then
   if printf '%s\n' "$deletions" | grep -qE '\.storage|\.db|secrets\.yaml'; then
     echo
     echo "REFUSING: a planned deletion touches .storage, a database, or secrets.yaml." >&2
-    echo "Fix .rsyncignore before going any further." >&2
+    echo "Fix $rsyncignore before going any further." >&2
     exit 3
   fi
 fi
@@ -66,7 +69,7 @@ fi
 
 if [ "${HA_DEPLOY_YES:-}" != "1" ]; then
   echo
-  printf 'Deploy to %s — the live house. Continue? [y/N] ' "$instance"
+  printf 'Deploy to %s (%s). Continue? [y/N] ' "$instance" "$ssh_target"
   read -r reply
   case "$reply" in
     y | Y | yes | YES) ;;
@@ -79,7 +82,7 @@ fi
 
 echo
 echo "--- transfer ---"
-rsync -av --delete-after --exclude-from=.rsyncignore ha-config/ "$ssh_target:/config/"
+rsync -av --delete-after --exclude-from="$rsyncignore" "$config_dir/" "$ssh_target:/config/"
 
 echo
 echo "--- ha core check ---"
@@ -87,4 +90,4 @@ ssh "$ssh_target" 'ha core check'
 
 echo
 echo "Deployed. Now reload the specific domain, not a restart:"
-echo "  mise run reload automation"
+echo "  hass-ops reload automation"

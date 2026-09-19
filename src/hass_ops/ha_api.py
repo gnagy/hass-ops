@@ -39,8 +39,8 @@ def resolve_instance() -> tuple[str, str, str]:
     instance = os.environ.get("HA_INSTANCE")
     if not instance:
         raise HaApiError(
-            "HA_INSTANCE is not set. Run tools through `mise run`, which loads "
-            "mise.toml and mise.local.toml."
+            "HA_INSTANCE is not set. Run through the `hass-ops` command, which selects "
+            "the instance from hass-ops.toml."
         )
 
     prefix = f"HA_{instance.upper()}"
@@ -55,8 +55,8 @@ def resolve_instance() -> tuple[str, str, str]:
     if missing:
         raise HaApiError(
             f"HA_INSTANCE={instance!r} but {' and '.join(missing)} unset. "
-            "URLs belong in mise.toml; tokens belong in mise.local.toml, which "
-            "is gitignored. Never put a token in mise.toml."
+            "URLs belong in hass-ops.toml; the token in the environment as "
+            f"{prefix}_TOKEN. Never put a token in a tracked file."
         )
 
     assert url is not None and token is not None  # narrowed by the check above

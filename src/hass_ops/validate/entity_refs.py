@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.13"
-# dependencies = ["pyyaml>=6"]
-# ///
 """Cross-check every entity_id in tier-1 YAML against the live instance.
 
 An invented entity_id is valid YAML. `ha core check` validates schema and will
@@ -43,16 +38,16 @@ from pathlib import Path
 
 import yaml
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from ha_api import HaApi, HaApiError  # noqa: E402
+from hass_ops.ha_api import HaApi, HaApiError
+from hass_ops.project import current
 
-CONFIG_DIR = Path(__file__).resolve().parent.parent.parent / "ha-config"
+CONFIG_DIR = current().config
 
 # Never scanned. secrets.yaml is untracked and holds no entity refs; www/ is
 # frontend assets; zha_quirks/ is Python. Stock blueprints are not tracked here
 # at all (see .rsyncignore), so they need no entry.
 SKIP_NAMES = {"secrets.yaml"}
-SKIP_DIRS = {"www", "zha_quirks"}
+SKIP_DIRS = set(current().skip_dirs)
 
 # ESPHome yamls are device firmware definitions compiled by the add-on, not
 # config HA reads. They use a different schema and mention HA entities only
@@ -205,7 +200,7 @@ def collect_references(
 
 
 def relative(path: Path) -> str:
-    return str(path.relative_to(CONFIG_DIR.parent))
+    return current().relative(path)
 
 
 def main() -> int:

@@ -1,7 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.13"
-# ///
 """Reload one Home Assistant config domain.
 
 A restart is a multi-minute outage of the house. For a change to one automation
@@ -18,8 +14,7 @@ import logging
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from ha_api import HaApi, HaApiError  # noqa: E402
+from hass_ops.ha_api import HaApi, HaApiError
 
 # Domains whose reload service exists on a default install. Not exhaustive —
 # anything else is passed through, since integrations add their own.
@@ -29,7 +24,7 @@ COMMON = ("automation", "script", "scene", "template", "input_boolean", "group")
 def main() -> int:
     domains = sys.argv[1:]
     if not domains:
-        print(f"usage: reload.py <domain> [...]\ncommon: {', '.join(COMMON)}", file=sys.stderr)
+        print(f"usage: hass-ops reload <domain> [...]\ncommon: {', '.join(COMMON)}", file=sys.stderr)
         return 64
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")

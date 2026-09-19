@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.13"
-# dependencies = ["websockets>=12"]
-# ///
 """Two read-only HACS checks: can HACS download, and did what it downloaded arrive.
 
   resources   every Lovelace resource URL answers 200             -> exit 1 if not
@@ -36,9 +31,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from ha_api import HaApiError, resolve_instance  # noqa: E402
-from ha_ws import HaWs  # noqa: E402
+from hass_ops.ha_api import HaApiError, resolve_instance
+from hass_ops.ha_ws import HaWs
 
 TIMEOUT = 15
 
@@ -88,7 +82,7 @@ def check_resources() -> int:
 
     if failures:
         print(f"\n{failures} resource(s) do not load; every card they define renders as an error.")
-        print("A HACS plugin here was probably half-updated - run `mise run hacs-preflight`, then redownload it.")
+        print("A HACS plugin here was probably half-updated - run `hass-ops hacs preflight`, then redownload it.")
         return 1
     return 0
 
@@ -97,7 +91,7 @@ def check_preflight() -> int:
     instance, _, _ = resolve_instance()
     ssh = os.environ.get(f"HA_{instance.upper()}_SSH")
     if not ssh:
-        print(f"error: HA_{instance.upper()}_SSH is not set. Run through `mise run`.", file=sys.stderr)
+        print(f"error: HA_{instance.upper()}_SSH is not set: give the instance an `ssh` in hass-ops.toml.", file=sys.stderr)
         return 2
 
     result = subprocess.run(

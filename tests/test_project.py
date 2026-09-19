@@ -19,6 +19,11 @@ default = true
 [instances.test]
 url = "https://test.example"
 ssh = "test-host"
+token_command = "printf 'from-command\\n'"
+
+[instances.broken]
+url = "https://broken.example"
+token_command = "echo nope >&2; exit 3"
 """
 
 
@@ -28,6 +33,8 @@ def proj_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (tmp_path / "sub" / "deeper").mkdir(parents=True)
     monkeypatch.delenv("HA_INSTANCE", raising=False)
     monkeypatch.delenv("HASS_OPS_PROJECT", raising=False)
+    for name in ("PROD", "TEST", "BROKEN"):
+        monkeypatch.delenv(f"HA_{name}_TOKEN", raising=False)
     return tmp_path
 
 
@@ -73,3 +80,30 @@ def test_activate_publishes_the_choice(proj_dir: Path, monkeypatch: pytest.Monke
     assert os.environ["HA_INSTANCE"] == "test"
     assert os.environ["HA_TEST_URL"] == "https://test.example"  # the file wins
     assert os.environ["HA_TEST_SSH"] == "test-host"
+
+
+def test_token_from_command(proj_dir: Path) -> None:
+    import os
+
+    project.activate(proj_dir, "test")
+    assert os.environ["HA_TEST_TOKEN"] == "from-command"
+
+
+def test_environment_token_wins_and_command_is_not_run(proj_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import os
+
+    monkeypatch.setenv("HA_BROKEN_TOKEN", "from-env")
+    project.activate(proj_dir, "broken")  # would raise if the failing command ran
+    assert os.environ["HA_BROKEN_TOKEN"] == "from-env"
+
+
+def test_failing_token_command_says_what_to_do(proj_dir: Path) -> None:
+    with pytest.raises(project.ProjectError, match=r"exit 3\): nope\. Set HA_BROKEN_TOKEN"):
+        project.activate(proj_dir, "broken")
+
+
+def test_no_token_command_leaves_the_token_unset(proj_dir: Path) -> None:
+    import os
+
+    project.activate(proj_dir, "prod")
+    assert "HA_PROD_TOKEN" not in os.environ

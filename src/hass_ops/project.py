@@ -15,13 +15,17 @@ instances it deploys to:
     [instances.prod]
     url = "https://homeassistant.example"
     ssh = "homeassistant"       # ssh host for deploys and `ha core check`
+    token_command = "security find-generic-password -s hass-ops -a prod -w"
     default = true
 
     [instances.test]
     url = "https://ha-test.example"
     ssh = "ha-test"
 
-Tokens are never in the file: an instance's token is read from `HA_<NAME>_TOKEN`.
+Tokens are never in the file. An instance's token is `HA_<NAME>_TOKEN` from the environment when that is set,
+otherwise the output of its `token_command`, run through the shell: a keychain or password-manager lookup
+such as `security find-generic-password ... -w` (macOS), `op read op://...`, `pass show ...` or
+`secret-tool lookup ...`. The command is only run for the instance a command targets.
 
 Which instance a command targets is decided once, here, in this order: `--instance`, then `HA_INSTANCE`,
 then the instance marked `default`. The choice is printed before anything connects.
@@ -30,6 +34,7 @@ then the instance marked `default`. The choice is printed before anything connec
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass, field
@@ -48,6 +53,7 @@ class Instance:
     url: str
     ssh: str | None = None
     default: bool = False
+    token_command: str | None = None
 
 
 @dataclass(frozen=True)
@@ -112,7 +118,13 @@ def load(path: Path) -> Project:
         return (root / paths.get(key, default)).resolve()
 
     instances = {
-        name: Instance(name=name, url=spec["url"].rstrip("/"), ssh=spec.get("ssh"), default=bool(spec.get("default")))
+        name: Instance(
+            name=name,
+            url=spec["url"].rstrip("/"),
+            ssh=spec.get("ssh"),
+            default=bool(spec.get("default")),
+            token_command=spec.get("token_command"),
+        )
         for name, spec in data.get("instances", {}).items()
     }
     return Project(
@@ -132,8 +144,9 @@ _current: Project | None = None
 def activate(project_dir: Path | None = None, instance: str | None = None) -> tuple[Project, Instance]:
     """Load the project and select the instance for this process.
 
-    The chosen instance is published to the environment (HA_INSTANCE, HA_<NAME>_URL, HA_<NAME>_SSH) so the
-    clients and deploy.sh read one answer. The file wins over anything already set for URL and ssh host.
+    The chosen instance is published to the environment (HA_INSTANCE, HA_<NAME>_URL, HA_<NAME>_SSH and, when
+    it was not already set, HA_<NAME>_TOKEN from token_command) so the clients and deploy.sh read one answer.
+    The file wins over anything already set for URL and ssh host; the environment wins for the token.
     """
     global _current
     _current = load(find(project_dir))
@@ -143,8 +156,29 @@ def activate(project_dir: Path | None = None, instance: str | None = None) -> tu
     os.environ[f"{prefix}_URL"] = target.url
     if target.ssh:
         os.environ[f"{prefix}_SSH"] = target.ssh
+    if not os.environ.get(f"{prefix}_TOKEN") and target.token_command:
+        os.environ[f"{prefix}_TOKEN"] = run_token_command(target)
     print(f"project={_current.root}  instance={target.name}  url={target.url}", file=sys.stderr)
     return _current, target
+
+
+def run_token_command(target: Instance) -> str:
+    """Run an instance's token_command and return its first line. The token is never printed."""
+    assert target.token_command
+    try:
+        result = subprocess.run(
+            target.token_command, shell=True, capture_output=True, text=True, timeout=60, check=False
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ProjectError(f"token_command for {target.name!r} timed out") from exc
+    token = result.stdout.strip().splitlines()[0].strip() if result.stdout.strip() else ""
+    if result.returncode != 0 or not token:
+        detail = (result.stderr.strip().splitlines() or ["no output"])[-1].rstrip(".")
+        raise ProjectError(
+            f"token_command for {target.name!r} failed (exit {result.returncode}): {detail}. "
+            f"Set HA_{target.name.upper()}_TOKEN instead, or fix the command in {FILENAME}."
+        )
+    return token
 
 
 def current() -> Project:

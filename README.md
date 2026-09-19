@@ -26,7 +26,20 @@ hass-ops --help
 ```
 
 `hass-ops.toml` in the config repo names the paths and the instances; `src/hass_ops/project.py` documents
-the format. Tokens are read from `HA_<INSTANCE>_TOKEN` and never belong in the file.
+the format. Tokens never belong in the file: each instance's token is `HA_<INSTANCE>_TOKEN` when that is set,
+otherwise the output of the instance's `token_command`, e.g. a macOS Keychain lookup:
+
+```toml
+[instances.prod]
+url = "https://homeassistant.example"
+ssh = "homeassistant"
+token_command = "security find-generic-password -s hass-ops -a prod -w"
+default = true
+```
+
+```shell
+security add-generic-password -U -s hass-ops -a prod -w   # prompts for the long-lived access token
+```
 
 ## Develop
 

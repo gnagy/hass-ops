@@ -16,6 +16,8 @@ commands (`check`, `pull`, `drift`, `apply` without `--write`, `deploy --dry-run
   `hass-ops.toml`, and printed before anything connects. Clients read the published
   `HA_{INSTANCE}_URL` / `HA_{INSTANCE}_TOKEN`. **Never hardcode a URL or a path to a config repo**: paths
   come from `hass-ops.toml`.
+- Tokens: `HA_{INSTANCE}_TOKEN` from the environment, else the instance's `token_command`, run only for the
+  targeted instance. A token is never printed, logged or written to a file.
 - `ha_api.py` is stdlib only: every other module imports it, so a dependency there is a dependency everywhere.
 - A command is a module with a `main()` that parses its own arguments; `cli.py` registers it in `COMMANDS`.
   Modules read project paths at import, so `cli.py` imports them only after `project.activate()`.

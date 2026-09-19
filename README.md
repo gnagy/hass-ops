@@ -38,8 +38,11 @@ default = true
 ```
 
 ```shell
-security add-generic-password -U -s hass-ops -a prod -w   # prompts for the long-lived access token
+security add-generic-password -U -s hass-ops -a prod -w "$TOKEN"
 ```
+
+Pass the token as an argument. Without one, `-w` prompts for it, and that prompt silently keeps only the first
+128 characters; Home Assistant's long-lived tokens are longer, and the truncated one is rejected as invalid.
 
 ## Develop
 

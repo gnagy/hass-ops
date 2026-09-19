@@ -22,6 +22,8 @@ hass-ops pull                 # instance from --instance, HA_INSTANCE, or the fi
 hass-ops -i test apply        # plan against the test instance
 hass-ops apply --write
 hass-ops deploy --dry-run
+hass-ops exec -- <command>   # any command with HA_INSTANCE, HA_<NAME>_URL/_SSH/_TOKEN set,
+                              # e.g. a script using hass_ops.ha_ws, or docker compose for an MCP server
 hass-ops --help
 ```
 

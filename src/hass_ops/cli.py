@@ -29,6 +29,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "apply": ("hass_ops.apply", "reconcile the instance toward desired/ (dry run unless --write)"),
     "deploy": ("", "rsync the config to the instance, after check and a dry run; --dry-run stops there"),
     "reload": ("hass_ops.reload", "reload config domains, e.g. `reload automation template`; never a restart"),
+    "exec": ("", "run a command with the instance in its environment: `exec -- docker compose up -d`"),
 }
 
 
@@ -75,6 +76,24 @@ def _deploy(proj: project_mod.Project, prog: str, argv: list[str]) -> int:
         return subprocess.call(["bash", str(path), "dry" if args.dry_run else "apply"], env=env)
 
 
+def _exec(prog: str, argv: list[str]) -> int:
+    """Run any command with the selected instance published: HA_INSTANCE, HA_<NAME>_URL, _SSH and _TOKEN.
+
+    For scripts that use the hass_ops client library and for tools that take an HA URL and token from the
+    environment, so neither needs its own copy of either.
+    """
+    if argv and argv[0] == "--":
+        argv = argv[1:]
+    if not argv:
+        print(f"usage: {prog} exec -- <command> [args...]", file=sys.stderr)
+        return 64
+    try:
+        return subprocess.call(argv)
+    except FileNotFoundError:
+        print(f"error: command not found: {argv[0]}", file=sys.stderr)
+        return 127
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(
@@ -100,6 +119,8 @@ def main(argv: list[str] | None = None) -> int:
         return _drift(proj, prog, ns.args)
     if ns.command == "deploy":
         return _deploy(proj, prog, ns.args)
+    if ns.command == "exec":
+        return _exec(prog, ns.args)
     return _run_module(COMMANDS[ns.command][0], f"{prog} {ns.command}", ns.args)
 
 

@@ -1,0 +1,46 @@
+# rsync exclude list for `hass-ops deploy`, which runs
+#
+#   rsync --delete-after --exclude-from=.rsyncignore ha-config/ <instance>:/config/
+#
+# Anything on the instance that is neither in ha-config/ nor excluded below WILL BE DELETED.
+# Read that sentence again before removing a line, and run `hass-ops deploy --dry-run` after
+# any change here.
+#
+# This is a starting point. Add whatever else lives on your instance that you do not track.
+
+# --- Runtime state Home Assistant owns ---
+.storage/
+.cloud/
+.cache/
+.uuid
+.HA_VERSION
+.ha_run.lock
+secrets.yaml
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+home-assistant.log*
+deps/
+tts/
+backups/
+image/
+media/
+ip_bans.yaml
+
+# --- Installed by HACS or by add-ons, never by this repo ---
+custom_components/
+www/community/
+esphome/.esphome/
+esphome/build/
+# The ESPHome Device Builder add-on keeps its own git history here. rsyncing over it corrupts it.
+esphome/.git/
+
+# --- Shipped by Home Assistant, regenerated on upgrade ---
+# Your own blueprints live beside these and are tracked.
+blueprints/automation/homeassistant/
+blueprints/script/homeassistant/
+blueprints/template/homeassistant/
+
+# --- Generated ---
+__pycache__/

@@ -1,0 +1,47 @@
+# Desired registry state, applied by `hass-ops apply` (a dry run until --write).
+#
+# This file is SPARSE, and that is the whole safety model:
+#
+#   - An entity not listed here is left alone. Listing 3 of 900 changes 3.
+#   - A field not present on an entry is left alone.
+#   - An explicit `null` clears a value: "should be empty", as opposed to "not managed here".
+#
+# Entities are keyed on `unique_id`, not `entity_id`: it is the integration's own identifier, the same
+# across renames and across instances. Find it in exports/<instance>/registry.yaml, or let
+# `hass-ops promote entity <entity_id>` write the entry for you.
+
+# Floors, areas and labels are applied before devices and entities, so those may refer to something
+# declared here that the instance does not have yet. Home Assistant derives the id of a new one from its
+# name; if it lands on a different id than the one declared, apply says so, and this file needs correcting.
+floors:
+  - floor_id: ground_floor
+    name: Ground Floor
+    level: 0
+    icon: mdi:home-floor-0
+
+areas:
+  - area_id: porch
+    name: Porch
+    floor_id: ground_floor
+
+labels:
+  - label_id: security
+    name: Security
+    color: red
+
+# Devices are keyed on one of their integration identifiers: the value under `identifiers:` in the
+# registry export. `name` is the name you give the device; entity names that follow the device follow it.
+devices:
+  - identifier: "0x00158d0001a2b3c4"
+    name: Porch motion sensor
+    area: porch
+    labels: [security]
+
+entities:
+  - unique_id: "0x00158d0001a2b3c4-occupancy"
+    entity_id: binary_sensor.porch_motion
+    name: Porch motion
+    labels: [security]
+  - unique_id: "0x00158d0001a2b3c4-battery"
+    hidden: true
+    icon: null

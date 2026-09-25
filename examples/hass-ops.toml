@@ -1,0 +1,24 @@
+# hass-ops project file. Paths are relative to this file; docs/configuration.md describes every key.
+# Tokens never go here: each instance's token is HA_<NAME>_TOKEN when set, otherwise the output of its
+# token_command.
+
+[paths]
+config = "ha-config"
+desired = "desired"
+exports = "exports"
+rsyncignore = ".rsyncignore"
+
+[check]
+skip_dirs = ["www"]
+
+[instances.prod]
+url = "https://homeassistant.example"
+ssh = "homeassistant"
+token_command = "security find-generic-password -s hass-ops -a prod -w"
+default = true
+
+# A second instance to rehearse against: a VM restored from a backup of prod works well.
+[instances.test]
+url = "https://ha-test.example"
+ssh = "ha-test"
+token_command = "security find-generic-password -s hass-ops -a test -w"

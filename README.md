@@ -1,53 +1,100 @@
 # hass-ops
 
-Operate a Home Assistant instance as code.
+Run a Home Assistant instance from a git repository. hass-ops checks your YAML against the live instance,
+deploys it through guarded steps, turns what was changed in the UI into a diff you can review, and gives
+scripts and AI agents the instance's URL and token without a copy of either.
 
-- **Tier 1**, the YAML Home Assistant reads: `check` parses it and verifies every `entity_id` it references
-  against the live instance; `deploy` rsyncs it to `/config` after a dry run that refuses deletions of
-  `.storage`, databases or secrets.
-- **Tier 2**, what lives in `.storage` (entity, device, area, floor and label registries; storage-mode
-  dashboards): `pull` records it as normalised YAML in `exports/`, `promote` adopts what you want to keep into
-  `desired/`, `apply` reconciles the instance toward `desired/` (sparse, keyed on `unique_id`, dry run unless
-  `--write`), and `drift` fails when the instance changed outside the repo.
+For people who already know Home Assistant well, work in a terminal, and want their setup kept as code.
 
-Early: extracted in September 2026 from one house's configuration repo, where it had been growing since
-August. Command names and the config file format may still change.
+## The problems
 
-## Use
+Keeping Home Assistant's configuration in git gets you history, but most of the risks stay:
 
-```shell
-uv tool install -e .          # puts `hass-ops` on PATH
-cd <your config repo>         # the directory holding hass-ops.toml, or below it
-hass-ops pull                 # instance from --instance, HA_INSTANCE, or the file's default
-hass-ops -i test apply        # plan against the test instance
-hass-ops apply --write
-hass-ops deploy --dry-run
-hass-ops exec -- <command>   # any command with HA_INSTANCE, HA_<NAME>_URL/_SSH/_TOKEN set,
-                              # e.g. a script using hass_ops.ha_ws, or docker compose for an MCP server
-hass-ops --help
-```
+- **Mistakes pass the checks.** An automation that refers to a misspelled `entity_id` is valid YAML, passes
+  `ha core check`, reloads, and never runs. Nothing reports it.
+- **Deploying is a bare rsync.** Copying the repository to `/config` with `--delete` removes whatever on the
+  instance is not in the repository. Miss one line in the exclude list and that can be `.storage`, the
+  database or `secrets.yaml`.
+- **Half the configuration is not in files.** Entity names, areas, labels, floors and UI dashboards live in
+  `.storage`, which Home Assistant owns and rewrites. A rename from a phone never shows up in `git diff`, and
+  editing those files by hand is overwritten on the next save.
+- **Several consumers, several copies of the token.** Deploy scripts, one-off scripts and an MCP server for
+  an AI agent each want the instance's URL and a long-lived token. Each keeps its own copy, in its own
+  environment file, and nothing says which instance it is about to write to.
 
-`hass-ops.toml` in the config repo names the paths and the instances; `src/hass_ops/project.py` documents
-the format. Tokens never belong in the file: each instance's token is `HA_<INSTANCE>_TOKEN` when that is set,
-otherwise the output of the instance's `token_command`, e.g. a macOS Keychain lookup:
+## How it works
 
-```toml
-[instances.prod]
-url = "https://homeassistant.example"
-ssh = "homeassistant"
-token_command = "security find-generic-password -s hass-ops -a prod -w"
-default = true
-```
+Your repository holds the YAML Home Assistant reads, a record of the state Home Assistant keeps to itself
+(the entity, device and area **registries**, and UI dashboards), and the part of that state you want to
+manage. hass-ops moves data between the repository and the instance in both directions, and never without
+showing you first. [Architecture](docs/architecture.md) has the full picture: a diagram of what moves where,
+why the registries matter, and every safeguard.
+
+## A session
+
+Changing an automation:
 
 ```shell
-security add-generic-password -U -s hass-ops -a prod -w "$TOKEN"
+hass-ops pull                   # copy entity names, areas and dashboards from Home Assistant into exports/
+git diff                        # did anyone change them in the UI since last time? commit that first
+
+$EDITOR ha-config/automations.yaml
+
+hass-ops check                  # is the YAML valid, and does every entity it uses exist?
+hass-ops deploy                 # shows what it will copy to Home Assistant, asks, then copies it
+hass-ops reload automation      # Home Assistant loads the new automations; no restart
+
+# try it; when it works:
+git commit -am "Turn the porch light on at sunset"
 ```
 
-Pass the token as an argument. Without one, `-w` prompts for it, and that prompt silently keeps only the first
-128 characters; Home Assistant's long-lived tokens are longer, and the truncated one is rejected as invalid.
+Renaming entities, assigning areas and labels, and editing dashboards from files work the same way, with
+`apply` in place of `deploy`: see [Make and validate changes](docs/edit.md).
+
+## Is it for you?
+
+- Your Home Assistant configuration is in git, or you want it to be.
+- `deploy` needs ssh into the instance, as on Home Assistant OS or Supervised with an SSH add-on. Everything
+  else needs only the URL and a token, so it works with any install.
+- hass-ops does not write automations or generate configuration. It checks, deploys and tracks yours.
+
+## Install
+
+```shell
+uv tool install git+https://github.com/gnagy/hass-ops
+```
+
+Needs [uv](https://docs.astral.sh/uv/), which fetches Python 3.12 or later itself if you don't have it. If
+you manage tools with [mise](https://mise.jdx.dev), it can install both uv and hass-ops for you. [Install](docs/install.md)
+has the details, including exactly what gets installed where. Then [set up your configuration
+repository](docs/setup.md).
+
+## Documentation
+
+| When                     | Read                                                                         | Covers                                                        |
+|--------------------------|------------------------------------------------------------------------------|---------------------------------------------------------------|
+| Deciding whether it fits | [Architecture](docs/architecture.md)                                         | what moves where and why, the registries, the safeguards      |
+| Once per machine         | [Install](docs/install.md)                                                   | uv or mise, and exactly what goes where                       |
+| Once per instance        | [Set up your configuration repository](docs/setup.md)                        | the first import of an existing instance                      |
+| Start of every session   | [Bring in changes made on the instance](docs/sync.md)                        | `drift`, `pull`, `promote`, and YAML edited on the instance   |
+| Making a change          | [Make and validate changes](docs/edit.md)                                    | editing YAML and `desired/`, `check`, planning with `apply`   |
+| Sending it               | [Deploy and verify](docs/deploy.md)                                          | `deploy`, `reload`, `apply --write`, verifying and undoing    |
+| Everything else          | [Other operations](docs/operations.md)                                       | a test instance, scripts and MCP servers, HACS checks, tokens |
+| Reference                | [File formats](docs/file-formats.md), [Configuration](docs/configuration.md) | `exports/` and `desired/`; every setting in `hass-ops.toml`   |
+
+## Status
+
+Early. Extracted in September 2026 from one house's configuration, where it had been in use since August, and
+developed against Home Assistant 2026.8 and 2026.9. Command names and file formats may still change. The
+registry and dashboard commands use WebSocket messages Home Assistant does not promise to keep stable between
+releases.
 
 ## Develop
 
 ```shell
 uv run pytest
 ```
+
+## License
+
+[Apache-2.0](LICENSE).

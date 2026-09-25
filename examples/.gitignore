@@ -1,0 +1,27 @@
+# Credentials: at any depth, so ha-config/esphome/secrets.yaml is covered too.
+secrets.yaml
+
+# Home Assistant's runtime state. .rsyncignore keeps these out of the copy from the instance; these lines keep
+# them out of git if one arrives some other way.
+ha-config/.storage/
+ha-config/.cloud/
+ha-config/.cache/
+ha-config/.uuid
+ha-config/.HA_VERSION
+ha-config/.ha_run.lock
+ha-config/*.db
+ha-config/*.db-*
+ha-config/home-assistant.log*
+ha-config/deps/
+ha-config/tts/
+ha-config/backups/
+ha-config/image/
+ha-config/media/
+ha-config/ip_bans.yaml
+ha-config/custom_components/
+ha-config/www/community/
+ha-config/esphome/.esphome/
+ha-config/esphome/build/
+
+__pycache__/
+.DS_Store

@@ -22,6 +22,14 @@ instances it deploys to:
     url = "https://ha-test.example"
     ssh = "ha-test"
 
+    [ha_mcp]                    # optional: what `hass-ops ha-mcp` runs, and settings for every instance
+    package = "ha-mcp==8.5.0"
+    [ha_mcp.env]
+    ENABLE_TOOL_SEARCH = "true"
+
+    [instances.test.ha_mcp]     # optional, per instance; read_only defaults to true
+    read_only = false
+
 Tokens are never in the file. An instance's token is `HA_<NAME>_TOKEN` from the environment when that is set,
 otherwise the output of its `token_command`, run through the shell: a keychain or password-manager lookup
 such as `security find-generic-password ... -w` (macOS), `op read op://...`, `pass show ...` or
@@ -48,12 +56,29 @@ class ProjectError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class McpSettings:
+    """An instance's settings for `hass-ops ha-mcp`. Read-only unless the file says otherwise."""
+
+    read_only: bool = True
+    env: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class Instance:
     name: str
     url: str
     ssh: str | None = None
     default: bool = False
     token_command: str | None = None
+    ha_mcp: McpSettings = field(default_factory=McpSettings)
+
+
+@dataclass(frozen=True)
+class HaMcp:
+    """The `[ha_mcp]` table: the package `hass-ops ha-mcp` runs and environment shared by every instance."""
+
+    package: str
+    env: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -65,6 +90,7 @@ class Project:
     rsyncignore: Path
     skip_dirs: frozenset[str] = frozenset()
     instances: dict[str, Instance] = field(default_factory=dict)
+    ha_mcp: HaMcp | None = None
 
     def relative(self, path: Path) -> str:
         """A path as shown to the user: relative to the project root when it is inside it."""
@@ -124,9 +150,16 @@ def load(path: Path) -> Project:
             ssh=spec.get("ssh"),
             default=bool(spec.get("default")),
             token_command=spec.get("token_command"),
+            ha_mcp=_mcp_settings(f"instances.{name}.ha_mcp", spec.get("ha_mcp", {})),
         )
         for name, spec in data.get("instances", {}).items()
     }
+    ha_mcp = None
+    if "ha_mcp" in data:
+        table = data["ha_mcp"]
+        if not isinstance(table.get("package"), str) or not table["package"]:
+            raise ProjectError(f"{path}: [ha_mcp] needs package, e.g. package = \"ha-mcp==8.5.0\"")
+        ha_mcp = HaMcp(package=table["package"], env=_env_table("ha_mcp.env", table.get("env", {})))
     return Project(
         root=root,
         config=at("config", "ha-config"),
@@ -135,7 +168,38 @@ def load(path: Path) -> Project:
         rsyncignore=at("rsyncignore", ".rsyncignore"),
         skip_dirs=frozenset(data.get("check", {}).get("skip_dirs", ["www"])),
         instances=instances,
+        ha_mcp=ha_mcp,
     )
+
+
+# Set by `hass-ops ha-mcp` from the instance itself; a table that tried to set them would be ignored or would
+# undo the read_only setting, so it is refused instead.
+RESERVED_MCP_ENV = frozenset({"HOMEASSISTANT_URL", "HOMEASSISTANT_TOKEN", "READ_ONLY_MODE"})
+
+
+def _env_table(where: str, table: object) -> dict[str, str]:
+    if not isinstance(table, dict):
+        raise ProjectError(f"[{where}] must be a table of NAME = \"value\"")
+    env: dict[str, str] = {}
+    for key, value in table.items():
+        if key in RESERVED_MCP_ENV:
+            hint = "use read_only in [instances.<name>.ha_mcp]" if key == "READ_ONLY_MODE" else "hass-ops sets it"
+            raise ProjectError(f"[{where}] may not set {key}: {hint}")
+        if isinstance(value, bool):
+            value = "true" if value else "false"
+        if not isinstance(value, (str, int)):
+            raise ProjectError(f"[{where}] {key} must be a string, number or boolean")
+        env[key] = str(value)
+    return env
+
+
+def _mcp_settings(where: str, table: object) -> McpSettings:
+    if not isinstance(table, dict):
+        raise ProjectError(f"[{where}] must be a table")
+    read_only = table.get("read_only", True)
+    if not isinstance(read_only, bool):
+        raise ProjectError(f"[{where}] read_only must be true or false")
+    return McpSettings(read_only=read_only, env=_env_table(f"{where}.env", table.get("env", {})))
 
 
 _current: Project | None = None

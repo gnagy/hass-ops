@@ -28,7 +28,7 @@ flowchart LR
     api -- "check: entity states" --> tool
     storage -- "pull: via WebSocket" --> repo
     repo -- "apply: via WebSocket" --> storage
-    tool -- "exec: URL + token in env" --> mcp
+    tool -- "ha-mcp / exec: URL + token in env" --> mcp
     agent --> mcp --> api
     tool -. "-i test" .-> test
 ```
@@ -36,14 +36,14 @@ flowchart LR
 The config repository is the source of truth for what you write; the instance is the source of truth for what
 it has. hass-ops moves data between them in both directions, and never in a way you did not see first:
 
-| Data                                                      | From → to                     | Command         | Why                                                     |
-|-----------------------------------------------------------|-------------------------------|-----------------|---------------------------------------------------------|
-| YAML config (`configuration.yaml`, packages, automations) | repo `ha-config/` → `/config` | `deploy`        | your edits go live, reviewed and committed              |
-| Entity ids and states                                     | instance → your terminal      | `check`         | every reference in the YAML is confirmed to exist       |
-| Registries and UI dashboards                              | instance → repo `exports/`    | `pull`, `drift` | UI changes become a commit, or a warning                |
-| Entities and dashboards you pick                          | `exports/` → `desired/`       | `promote`       | "I meant that change" becomes managed state             |
-| Names, areas, labels, dashboards                          | repo `desired/` → instance    | `apply`         | declared state is enforced, and restored after UI drift |
-| URL and token                                             | keychain → a child process    | `exec`          | scripts and MCP servers use the same instance and token |
+| Data                                                      | From → to                     | Command          | Why                                                     |
+|-----------------------------------------------------------|-------------------------------|------------------|---------------------------------------------------------|
+| YAML config (`configuration.yaml`, packages, automations) | repo `ha-config/` → `/config` | `deploy`         | your edits go live, reviewed and committed              |
+| Entity ids and states                                     | instance → your terminal      | `check`          | every reference in the YAML is confirmed to exist       |
+| Registries and UI dashboards                              | instance → repo `exports/`    | `pull`, `drift`  | UI changes become a commit, or a warning                |
+| Entities and dashboards you pick                          | `exports/` → `desired/`       | `promote`        | "I meant that change" becomes managed state             |
+| Names, areas, labels, dashboards                          | repo `desired/` → instance    | `apply`          | declared state is enforced, and restored after UI drift |
+| URL and token                                             | keychain → a child process    | `exec`, `ha-mcp` | scripts and MCP servers use the same instance and token |
 
 ## The registries: state you depend on but cannot see
 

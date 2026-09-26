@@ -29,6 +29,8 @@ commands (`check`, `pull`, `drift`, `apply` without `--write`, `deploy --dry-run
 - Pull sorts by `unique_id`. Without deterministic ordering every pull is churn and the diff
   stops meaning anything.
 - Registry and Lovelace operations need the **WebSocket** API, not REST.
+- `ha-mcp` is optional and only launches someone else's server: it knows ha-mcp's variable names and nothing
+  more. `read_only` defaults to true, and `env` tables may not set what hass-ops derives from the instance.
 
 Write the pull side before the apply side: pull is read-only, so it is safe to iterate on, and it
 produces the fixtures apply gets tested against.

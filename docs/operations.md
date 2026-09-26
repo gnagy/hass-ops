@@ -17,7 +17,7 @@ logs its target before it acts.
 `desired/` is keyed on ids that are the same on every instance (`unique_id`, device identifiers), so the same
 file applies to both. `exports/` keeps one directory per instance.
 
-## Scripts and MCP servers: exec
+## Scripts: exec
 
 ```shell
 hass-ops exec -- ./my-script.py
@@ -25,28 +25,43 @@ hass-ops -i test exec -- ./my-script.py
 ```
 
 Runs any command with the targeted instance in its environment: `HA_INSTANCE`, `HA_<NAME>_URL`,
-`HA_<NAME>_SSH` and `HA_<NAME>_TOKEN`, the token taken from the keychain as usual. A script, or an MCP server
-that gives an AI agent access to Home Assistant, then needs no token of its own, and switching it to the test
-instance is `-i test`. Python scripts can use hass-ops's own clients, `hass_ops.ha_api` (REST) and
-`hass_ops.ha_ws` (WebSocket), which read the same variables.
+`HA_<NAME>_SSH` and `HA_<NAME>_TOKEN`, the token taken from the keychain as usual. A script then needs no
+token of its own, and switching it to the test instance is `-i test`. Python scripts can use hass-ops's own
+clients, `hass_ops.ha_api` (REST) and `hass_ops.ha_ws` (WebSocket), which read the same variables.
 
-For [ha-mcp](https://github.com/homeassistant-ai/ha-mcp), which reads `HOMEASSISTANT_URL` and
-`HOMEASSISTANT_TOKEN`, an MCP client entry could be:
+## MCP servers: ha-mcp
+
+```shell
+hass-ops -i test ha-mcp            # what an MCP client runs; speaks MCP on stdin/stdout
+hass-ops -i prod ha-mcp --print    # the command and environment it would run, token hidden
+```
+
+Runs [ha-mcp](https://github.com/homeassistant-ai/ha-mcp), which gives an AI agent access to Home Assistant,
+against the targeted instance. It reads [`[ha_mcp]`](configuration.md#ha_mcp) from `hass-ops.toml` and turns
+it into the environment ha-mcp reads:
+
+- `HOMEASSISTANT_URL` and `HOMEASSISTANT_TOKEN` from the instance, the token from its `token_command`;
+- `READ_ONLY_MODE` from the instance's `read_only`, which is **true unless the file says false**, so an
+  instance you forgot to configure is read-only, not writable;
+- `HA_MCP_DISABLE_SETTINGS_UI=1`: otherwise ha-mcp starts a settings web page on a local port beside the stdio
+  server, where changes are saved to files that override nothing set here but are easy to lose track of;
+- `HA_MCP_CONFIG_DIR=~/.ha-mcp/<instance>`, so two instances don't share ha-mcp's saved state;
+- then `[ha_mcp.env]`, then the instance's own `env`.
+
+Then the process becomes `uvx <package>`. One MCP client entry per instance:
 
 ```json
 {
   "mcpServers": {
-    "ha-test": {
-      "command": "hass-ops",
-      "args": ["-C", "/path/to/my-house", "-i", "test", "exec", "--", "sh", "-c",
-               "HOMEASSISTANT_URL=\"$HA_TEST_URL\" HOMEASSISTANT_TOKEN=\"$HA_TEST_TOKEN\" exec uvx ha-mcp"]
-    }
+    "ha-prod": { "command": "hass-ops", "args": ["-C", "/path/to/my-house", "-i", "prod", "ha-mcp"] },
+    "ha-test": { "command": "hass-ops", "args": ["-C", "/path/to/my-house", "-i", "test", "ha-mcp"] }
   }
 }
 ```
 
-One entry per instance lets you give each its own guardrails, e.g. ha-mcp's `READ_ONLY_MODE=true` in the
-entry for your house and writes allowed on the test instance.
+With `read_only = false` only on the test instance, agents can try writes there while your house stays
+read-only. ha-mcp enforces read-only mode at the tool layer: the token is still an administrator's, so it is a
+guard against a careless agent, not against anyone holding the token.
 
 ## HACS checks
 

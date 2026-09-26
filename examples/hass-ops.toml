@@ -22,3 +22,14 @@ default = true
 url = "https://ha-test.example"
 ssh = "ha-test"
 token_command = "security find-generic-password -s hass-ops -a test -w"
+
+# Optional: `hass-ops -i <instance> ha-mcp` runs the ha-mcp MCP server. Every instance is read-only to it
+# unless its table says otherwise.
+# [instances.test.ha_mcp]
+# read_only = false
+#
+# [ha_mcp]
+# package = "ha-mcp==8.5.0"
+#
+# [ha_mcp.env]
+# ENABLE_TOOL_SEARCH = true

@@ -32,6 +32,15 @@ default = true
 [instances.test]
 url = "https://ha-test.example"
 ssh = "ha-test"
+
+[instances.test.ha_mcp]          # optional; see [ha-mcp](#ha_mcp)
+read_only = false
+
+[ha_mcp]                         # optional; only `hass-ops ha-mcp` reads it
+package = "ha-mcp==8.5.0"
+
+[ha_mcp.env]
+ENABLE_TOOL_SEARCH = true
 ```
 
 ### `[paths]`
@@ -64,6 +73,24 @@ One table per instance. The name is how you select it (`-i prod`) and forms the 
 | `ssh`           | for deploy | An ssh destination, usually a host alias from `~/.ssh/config`               |
 | `token_command` | no         | A shell command that prints the token; used when `HA_<NAME>_TOKEN` is unset |
 | `default`       | no         | The instance used when none is named. Exactly one may be the default        |
+
+### `[ha_mcp]`
+
+Settings for `hass-ops ha-mcp`, which runs the [ha-mcp](https://github.com/homeassistant-ai/ha-mcp) MCP
+server against the targeted instance. Leave the table out if you don't use it. ha-mcp reads all its settings
+from environment variables; hass-ops builds them from this file. See
+[MCP servers](operations.md#mcp-servers-ha-mcp).
+
+| Key                                 | Required | What                                                                |
+|-------------------------------------|----------|---------------------------------------------------------------------|
+| `package`                           | yes      | What `uvx` runs. Pin a version: `ha-mcp==8.5.0`                     |
+| `env`                               | no       | ha-mcp variables for every instance; booleans become `true`/`false` |
+| `instances.<name>.ha_mcp.read_only` | no       | `READ_ONLY_MODE` for that instance. **Defaults to true**            |
+| `instances.<name>.ha_mcp.env`       | no       | Variables for that instance only, overriding `[ha_mcp.env]`         |
+
+`HOMEASSISTANT_URL`, `HOMEASSISTANT_TOKEN` and `READ_ONLY_MODE` come from the instance and may not appear in
+an `env` table; the file is refused if they do. hass-ops also sets two defaults that an `env` table may
+override: `HA_MCP_DISABLE_SETTINGS_UI=1` and `HA_MCP_CONFIG_DIR=~/.ha-mcp/<instance>`.
 
 ## Choosing the instance
 

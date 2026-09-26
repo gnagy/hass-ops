@@ -30,6 +30,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "deploy": ("", "rsync the config to the instance, after check and a dry run; --dry-run stops there"),
     "reload": ("hass_ops.reload", "reload config domains, e.g. `reload automation template`; never a restart"),
     "exec": ("", "run a command with the instance in its environment: `exec -- docker compose up -d`"),
+    "ha-mcp": ("hass_ops.ha_mcp", "run the ha-mcp MCP server against the instance, settings from [ha_mcp]"),
 }
 
 
